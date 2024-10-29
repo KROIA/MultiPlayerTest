@@ -48,30 +48,85 @@ public:
 		: Game::Server() {}
 	~MyServer() {}
 
-	bool processPacket(sf::TcpSocket* client, const std::string& name, int command, sf::Packet& packet, sf::Packet& response) override
+	bool processPacket(sf::TcpSocket* client, const std::string& name, int command, sf::Packet& packet, sf::Packet& response, int& responseCommand) override
 	{
         switch (static_cast<Game::Player::Command>(command))
         {
 			case Game::Player::Command::move:
 			{
+				PlayerData& player = m_players[name];
 				sf::Vector2f movement;
 				packet >> movement.x >> movement.y;
+				player.position += movement;
+				player.hasChanges = true;
 				//getLogger().logInfo(name + " is moving by " + std::to_string(movement.x) + " " + std::to_string(movement.y));
-				response << movement.x << movement.y;
-				return true;
+				//response << player.position.x << player.position.y;
+				//responseCommand = static_cast<int>(Game::Player::Command::setPosition);
+				return false;
 			}
 			case Game::Player::Command::rotate:
 			{
+				PlayerData& player = m_players[name];
 				float angle;
 				packet >> angle;
+				player.rotation += angle;
+				player.hasChanges = true;
 				//getLogger().logInfo(name + " is rotating by " + std::to_string(angle));
-				response << angle;
+				//response << player.rotation;
+				//responseCommand = static_cast<int>(Game::Player::Command::setRotation);
+				return false;
+			}
+			case Game::Player::Command::getPlayers:
+			{
+				responseCommand = static_cast<int>(Game::Player::Command::getPlayers);
+				// send the names of the players
+				response << static_cast<int>(m_players.size());
+				std::string playerNames;
+				for (auto& pair : m_players)
+				{
+					playerNames += pair.first + "\n";
+					pair.second.hasChanges = true;
+					response << pair.first;
+				}
+				getLogger().logInfo("Sending player names: " + playerNames);
 				return true;
 			}
         }
 		getLogger().logError("Invalid command received from: " + name + " command: "+std::to_string(command));
 		return false;
 	}
+
+	void broadcastGameState()
+	{
+		sendTransforms();
+	}
+
+	private:
+	void sendTransforms()
+	{
+		for (auto& pair : m_players)
+		{
+			auto& player = pair.second;
+			if (!player.hasChanges)
+				continue;
+			player.hasChanges = false;
+			sf::Packet packet;
+			
+			packet << player.position.x << player.position.y << player.rotation;
+
+			for (sf::TcpSocket* client : getClients())
+				sendPacket(client, pair.first, static_cast<int>(Game::Player::Command::setTransformSmoth), packet);
+		}
+	}
+
+
+	struct PlayerData
+	{
+		sf::Vector2f position;
+		float rotation;
+		bool hasChanges = true;
+	};
+	std::unordered_map<std::string, PlayerData> m_players;
 };
 
 int main(int argc, char* argv[])
@@ -83,7 +138,11 @@ int main(int argc, char* argv[])
 	server.start(5000);
 
 	QTimer updateTimer;
-	QObject::connect(&updateTimer, &QTimer::timeout, [&server]() { server.update(); });
+	QObject::connect(&updateTimer, &QTimer::timeout, [&server]() 
+					 {
+						 server.update(); 
+						 server.broadcastGameState(); 
+					 });
 	updateTimer.start(10);
 
 	int ret = app.exec();

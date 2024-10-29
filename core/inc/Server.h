@@ -19,12 +19,12 @@ namespace Game
 		void stop();
 
 		virtual void update();
-		virtual bool processPacket(sf::TcpSocket* client, const std::string& name, int command, sf::Packet& packet, sf::Packet &response);
+		virtual bool processPacket(sf::TcpSocket* client, const std::string& name, int command, sf::Packet& packet, sf::Packet &response, int &responseCommand);
 
 		std::vector<std::pair<sf::TcpSocket*, sf::Packet>> getReceivedPackets();
 		void setSendingPackets(const std::vector<std::pair<sf::TcpSocket*, sf::Packet>>& packets);
-
-
+		void sendPacket(sf::TcpSocket* client, const std::string &name, int command, sf::Packet& packet);
+		const std::vector<sf::TcpSocket*>& getClients() const { return m_clients; }
 		
 
 	private:

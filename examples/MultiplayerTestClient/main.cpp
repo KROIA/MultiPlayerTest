@@ -42,6 +42,7 @@ int main(int argc, char* argv[])
 #include <thread>
 #include "MultiPlayerTest.h"
 #include "Player.h"
+#include "MyServerClient.h"
 
 
 namespace Game
@@ -50,7 +51,7 @@ namespace Game
 	void setupScene(QWidget* widget);
 
 	QSFML::Scene* scene = nullptr;
-	Player* player = nullptr;
+	//Player* player = nullptr;
 	QSFML::Objects::GameObjectPtr clientUpdateObj = nullptr;
 }
 
@@ -62,27 +63,34 @@ int main(int argc, char* argv[])
 	Log::UI::NativeConsoleView::createStaticInstance();
 	Log::UI::NativeConsoleView::getStaticInstance()->show();
 
-	Game::ServerClient::connect("127.0.0.1", 5000);
-
 	Game::setupScene(&widget);
+	Game::MyServerClient client(Game::scene);
+	client.connect("127.0.0.1", 5000);
+
+	
 	QTimer connectionTiler;
 	QTimer updateTimer;
-	QObject::connect(&connectionTiler, &QTimer::timeout, [&connectionTiler]() {
-		if (Game::ServerClient::isConnected())
+	QObject::connect(&connectionTiler, &QTimer::timeout, [&connectionTiler, &client]() {
+		if (client.isConnected())
 		{
 			connectionTiler.stop();
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			
+
 			if (!Game::clientUpdateObj)
 			{
 				Game::clientUpdateObj = new QSFML::Objects::GameObject("ClientHandler");
-				Game::clientUpdateObj->addUpdateFunction([](QSFML::Objects::GameObject& obj)
+				Game::clientUpdateObj->addUpdateFunction([&client](QSFML::Objects::GameObject& obj)
 					{
-						Game::ServerClient::updateListeners();
+						client.update();
 					});
 				if (Game::scene)
 				{
 					Game::scene->addObject(Game::clientUpdateObj);
 					Game::scene->getSceneLogger().logInfo("ClientHandler added to scene");
 					Game::scene->start();
+					// Read players
+					client.readPlayersFromServer();
 				}
 			}
 		}
@@ -90,7 +98,7 @@ int main(int argc, char* argv[])
 	connectionTiler.start(1000);
 
 	int ret = app.exec();
-	Game::ServerClient::disconnect();
+	client.disconnect();
 	Game::scene->stop();
 	delete Game::scene;
 	return ret;
@@ -108,8 +116,8 @@ namespace Game
 		scene = new Scene(widget, settings);
 
 		scene->addObject(new Objects::DefaultEditor("Editor", sf::Vector2f(1000, 800)));
-		player = new Player("Player");
-		scene->addObject(player);
+		//player = new Player("Player");
+		//scene->addObject(player);
 
 		widget->show();
 	}

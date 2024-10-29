@@ -10,23 +10,24 @@ namespace Game
 	class NetworkObject;
 	class ServerClient
 	{
-		ServerClient();
-		~ServerClient();
+		
 
-		static ServerClient& getInstance();
+		//static ServerClient& getInstance();
 	public:
-		static void addListener(NetworkObject* listener);
-		static void removeListener(NetworkObject* listener);
-		static void updateListeners();
+		ServerClient();
+		virtual ~ServerClient();
+		void addListener(NetworkObject* listener);
+		void removeListener(NetworkObject* listener);
+		//static void updateListeners();
 
-		static void connect(const sf::IpAddress& ip, unsigned short port);
-		static bool isConnected();
-		static void disconnect();
+		void connect(const sf::IpAddress& ip, unsigned short port);
+		bool isConnected();
+		void disconnect();
 
-		static void send(const sf::Packet& packet);
-		static void send(const std::vector<sf::Packet>& packets);
-		static bool hasPacket();
-		static std::vector<sf::Packet> getPackets();
+		void send(const sf::Packet& packet);
+		void send(const std::vector<sf::Packet>& packets);
+		bool hasPacket();
+		std::vector<sf::Packet> getPackets();
 
 		// Function to append packet2 to the end of packet1 with a size prefix
 		static void appendPacketWithSize(sf::Packet& packet1, const sf::Packet& packet2) {
@@ -63,11 +64,17 @@ namespace Game
 			return true;
 		}
 		
+		virtual void update();
+
+		protected:
+		Log::LogObject& getLogger() { return m_logger; }
+		std::mutex& getMutex() { return m_mutex; }
+		std::unordered_map<std::string, NetworkObject*>& getListeners() { return m_listeners; }
 	private:
 		bool isConnected_internal();
 		void disconnect_internal();
 
-		static void handleClient();
+		void handleClient();
 
 		
 

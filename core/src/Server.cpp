@@ -67,23 +67,24 @@ namespace Game
 			int command;
 			packet >> name >> command;
 			sf::Packet subPacket;
-			if (ServerClient::extractNextPacket(packet, subPacket))
+			ServerClient::extractNextPacket(packet, subPacket);
+			
+			int responseCommand = -1;
+			if (processPacket(client, name, command, subPacket, response, responseCommand))
 			{
-				if (processPacket(client, name, command, subPacket, response))
+				if (response.getDataSize() > 0)
 				{
-					if (response.getDataSize() > 0)
-					{
-						sf::Packet packet;
-						packet << name << command;
-						ServerClient::appendPacketWithSize(packet, response);
-						sending.emplace_back(std::pair<sf::TcpSocket*, sf::Packet>{client, std::move(packet)});
-					}
+					sf::Packet packet;
+					packet << name << responseCommand;
+					ServerClient::appendPacketWithSize(packet, response);
+					sending.emplace_back(std::pair<sf::TcpSocket*, sf::Packet>{client, std::move(packet)});
 				}
 			}
+			
 		}
 		setSendingPackets(sending);
 	}
-	bool Server::processPacket(sf::TcpSocket* client, const std::string& name, int command, sf::Packet& packet, sf::Packet& response)
+	bool Server::processPacket(sf::TcpSocket* client, const std::string& name, int command, sf::Packet& packet, sf::Packet& response, int& responseCommand)
 	{
 		getLogger().logInfo("Received packet from client: " + name);
 		return false;
@@ -106,6 +107,15 @@ namespace Game
 	{
 		std::unique_lock<std::mutex> lock(m_mutex);
 		m_sending = packets;
+		m_hasPacketToSend = true;
+	}
+	void Server::sendPacket(sf::TcpSocket* client, const std::string& name, int command, sf::Packet& packet)
+	{
+		sf::Packet packet2;
+		packet2 << name << command;
+		ServerClient::appendPacketWithSize(packet2, packet);
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_sending.emplace_back(std::pair<sf::TcpSocket*, sf::Packet>{client, std::move(packet2)});
 		m_hasPacketToSend = true;
 	}
 

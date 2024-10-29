@@ -11,11 +11,16 @@ namespace Game
 	class NetworkObject : public QSFML::Objects::GameObject
 	{
 	public:
-		NetworkObject(const std::string &name = "NetworkObject")
+		NetworkObject(ServerClient* client, const std::string &name = "NetworkObject")
 			: QSFML::Objects::GameObject(name)
+			, m_client(client)
 		{
+			m_client->addListener(this);
 		}
-		~NetworkObject() {}
+		~NetworkObject() 
+		{
+			m_client->removeListener(this);
+		}
 
 		virtual void handlePacket(int command, sf::Packet& packet) = 0;
 	protected:
@@ -25,8 +30,9 @@ namespace Game
 			sf::Packet p;
 			p << getName() << command;// << packet.getData();
 			ServerClient::appendPacketWithSize(p, packet);
-			ServerClient::send(p);
+			m_client->send(p);
 		}
 
+		ServerClient* m_client = nullptr;
 	};
 }

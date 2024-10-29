@@ -15,24 +15,23 @@ namespace Game
 		disconnect_internal();
 	}
 
-	ServerClient& ServerClient::getInstance()
-	{
-		static ServerClient instance;
-		return instance;
-	}
+	//ServerClient& ServerClient::getInstance()
+	//{
+	//	static ServerClient instance;
+	//	return instance;
+	//}
 
 	void ServerClient::addListener(NetworkObject* listener)
 	{
-		ServerClient& instance = ServerClient::getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		instance.m_listeners[listener->getName()] = listener;
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_listeners[listener->getName()] = listener;
 	}
 	void ServerClient::removeListener(NetworkObject* listener)
 	{
-		ServerClient& instance = ServerClient::getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		instance.m_listeners.erase(listener->getName());
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_listeners.erase(listener->getName());
 	}
+	/*
 	void ServerClient::updateListeners()
 	{
 		ServerClient& instance = ServerClient::getInstance();
@@ -63,36 +62,38 @@ namespace Game
 					listener->handlePacket(command, subPacket);
 			}
 		}
-	}
+	}*/
 
 	void ServerClient::connect(const sf::IpAddress& ip, unsigned short port)
 	{
-		ServerClient& instance = getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
+		std::unique_lock<std::mutex> lock(m_mutex);
 
-		if (instance.isConnected_internal())
+		if (isConnected_internal())
 		{
-			instance.disconnect_internal();
+			disconnect_internal();
 		}
 		
-		if (instance.m_socket.connect(ip, port) != sf::TcpSocket::Done)
+		if (m_socket.connect(ip, port) != sf::TcpSocket::Done)
 		{
-			instance.m_logger.logError("Failed to connect to server IP: "+ip.toString() + " Port: "+std::to_string(port));
+			m_logger.logError("Failed to connect to server IP: "+ip.toString() + " Port: "+std::to_string(port));
 		}
 		else
 		{
-			instance.m_logger.logInfo("Connected to server IP: " + ip.toString() + " Port: " + std::to_string(port));
-			instance.m_socket.setBlocking(false);
-			instance.m_threadRunning = true;
+			m_logger.logInfo("Connected to server IP: " + ip.toString() + " Port: " + std::to_string(port));
+			m_socket.setBlocking(false);
+			m_threadRunning = true;
 			// Create a thread to handle the client
-			instance.m_thread = std::thread(&ServerClient::handleClient);
+			m_thread = std::thread(&ServerClient::handleClient, this);
 		}
+	}
+	void ServerClient::update()
+	{
+
 	}
 	bool ServerClient::isConnected()
 	{
-		ServerClient& instance = getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		return instance.isConnected_internal();
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return isConnected_internal();
 	}
 	bool ServerClient::isConnected_internal()
 	{
@@ -101,11 +102,10 @@ namespace Game
 	}
 	void ServerClient::disconnect()
 	{
-		ServerClient& instance = getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		if (!instance.isConnected_internal())
+		std::unique_lock<std::mutex> lock(m_mutex);
+		if (!isConnected_internal())
 			return;
-		instance.disconnect_internal();
+		disconnect_internal();
 	}
 	void ServerClient::disconnect_internal()
 	{
@@ -119,46 +119,42 @@ namespace Game
 
 	void ServerClient::send(const sf::Packet& packet)
 	{
-		ServerClient& instance = getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		instance.m_sending.emplace_back(packet);
-		instance.m_hasPacketToSend = true;
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_sending.emplace_back(packet);
+		m_hasPacketToSend = true;
 	}
 	void ServerClient::send(const std::vector<sf::Packet>& packets)
 	{
-		ServerClient& instance = getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		instance.m_sending.insert(instance.m_sending.end(), packets.begin(), packets.end());
-		instance.m_hasPacketToSend = true;
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_sending.insert(m_sending.end(), packets.begin(), packets.end());
+		m_hasPacketToSend = true;
 	}
 	bool ServerClient::hasPacket()
 	{
-		ServerClient& instance = getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		return !instance.m_hasPacketReceived;
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return !m_hasPacketReceived;
 	}
 	std::vector<sf::Packet> ServerClient::getPackets()
 	{
-		ServerClient& instance = getInstance();
-		std::unique_lock<std::mutex> lock(instance.m_mutex);
-		std::vector<sf::Packet> packets = std::move(instance.m_received);
-		instance.m_received.clear();
-		instance.m_received.reserve(10);
-		instance.m_hasPacketReceived = false;
+		std::unique_lock<std::mutex> lock(m_mutex);
+		std::vector<sf::Packet> packets = std::move(m_received);
+		m_received.clear();
+		m_received.reserve(10);
+		m_hasPacketReceived = false;
 		return packets;
 	}
 
 
 	void ServerClient::handleClient()
 	{
-		ServerClient& instance = getInstance();
-		sf::TcpSocket& socket = instance.m_socket;
-		std::vector<sf::Packet>& sending = instance.m_sending;
-		std::vector<sf::Packet>& received = instance.m_received;
-		Log::LogObject& logger = instance.m_logger;
-		std::atomic<bool>& hasPacketReceived = instance.m_hasPacketReceived;
-		std::atomic<bool>& hasPacketToSend = instance.m_hasPacketToSend;
-		std::atomic<bool>& threadRunning = instance.m_threadRunning;
+		
+		sf::TcpSocket& socket = m_socket;
+		std::vector<sf::Packet>& sending = m_sending;
+		std::vector<sf::Packet>& received = m_received;
+		Log::LogObject& logger = m_logger;
+		std::atomic<bool>& hasPacketReceived = m_hasPacketReceived;
+		std::atomic<bool>& hasPacketToSend = m_hasPacketToSend;
+		std::atomic<bool>& threadRunning = m_threadRunning;
 		while (threadRunning)
 		{
 			sf::Packet packet;
@@ -168,7 +164,7 @@ namespace Game
 				case sf::Socket::Status::Done:
 				{
 					{
-						std::unique_lock<std::mutex> lock(instance.m_mutex);
+						std::unique_lock<std::mutex> lock(m_mutex);
 						received.emplace_back(std::move(packet));
 						hasPacketReceived = true;
 					}
@@ -187,7 +183,7 @@ namespace Game
 			{
 				std::vector<sf::Packet> sendingCpy;
 				{
-					std::unique_lock<std::mutex> lock(instance.m_mutex);
+					std::unique_lock<std::mutex> lock(m_mutex);
 					sendingCpy = std::move(sending);
 					sending.clear();
 					sending.reserve(10);
