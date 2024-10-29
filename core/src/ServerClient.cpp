@@ -1,11 +1,25 @@
 #include "ServerClient.h"
 #include "NetworkObject.h"
+#include <SFML/System/Time.hpp>
 
 namespace Game
 {
 	ServerClient::ServerClient()
+		: m_logger("ServerClient")
 	{
-		
+		m_connected = false;
+		m_hasPacketToSend = false;
+		m_hasPacketReceived = false;
+
+		m_autoReconnect = false;
+		m_autoReconnectIntervalMs = 1000;
+		m_connectedEvent = false;
+
+		m_ip = sf::IpAddress::None;
+		m_port = 0;
+		m_connectAsync = true;
+		m_connectThread = nullptr;
+		enableConnectAsync(true);
 	}
 
 	ServerClient::~ServerClient()
@@ -14,12 +28,6 @@ namespace Game
 			return;
 		disconnect_internal();
 	}
-
-	//ServerClient& ServerClient::getInstance()
-	//{
-	//	static ServerClient instance;
-	//	return instance;
-	//}
 
 	void ServerClient::addListener(NetworkObject* listener)
 	{
@@ -31,64 +39,131 @@ namespace Game
 		std::unique_lock<std::mutex> lock(m_mutex);
 		m_listeners.erase(listener->getName());
 	}
-	/*
-	void ServerClient::updateListeners()
-	{
-		ServerClient& instance = ServerClient::getInstance();
-		std::vector<sf::Packet> received;
-		if(instance.m_hasPacketReceived)
-		{
-			std::unique_lock<std::mutex> lock(instance.m_mutex);
-			received = std::move(instance.m_received);
-			instance.m_received.clear();
-			instance.m_received.reserve(10);
-			instance.m_hasPacketReceived = false;
-		}
-		for (sf::Packet& packet : received)
-		{
-			std::string name;
-			int command;
-			packet >> name >> command;
-			sf::Packet subPacket; 
-			if (ServerClient::extractNextPacket(packet, subPacket))
-			{
-				auto it = instance.m_listeners.find(name);
-				if (it == instance.m_listeners.end())
-				{
-					instance.m_logger.logError("Failed to find listener with name: " + name);
-					continue;
-				}
-				NetworkObject* listener = it->second;
-					listener->handlePacket(command, subPacket);
-			}
-		}
-	}*/
 
-	void ServerClient::connect(const sf::IpAddress& ip, unsigned short port)
+	bool ServerClient::connect(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs)
 	{
 		std::unique_lock<std::mutex> lock(m_mutex);
-
+		if (m_connectAsync)
+		{
+			if (!m_connectThread)
+			{
+				m_connectingThredRunning = true;
+				m_connectThread = new std::thread(&ServerClient::handleConnectThread, this);
+			}
+			m_connectingThreadCondition.notify_one();
+		}
+		
+		return connect_intrnal(ip, port, threadUpdateIntervalMs);
+	}
+	bool ServerClient::connect_intrnal(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs)
+	{
 		if (isConnected_internal())
 		{
 			disconnect_internal();
 		}
-		
-		if (m_socket.connect(ip, port) != sf::TcpSocket::Done)
+		m_threadDelay = threadUpdateIntervalMs;
+		m_ip = ip;
+		m_port = port;
+
+		if (m_socket.connect(ip, port, sf::milliseconds(m_autoReconnectIntervalMs/2)) != sf::TcpSocket::Done)
 		{
-			m_logger.logError("Failed to connect to server IP: "+ip.toString() + " Port: "+std::to_string(port));
+			m_logger.logError("Failed to connect to server IP: " + ip.toString() + " Port: " + std::to_string(port));
+			return false;
 		}
 		else
 		{
 			m_logger.logInfo("Connected to server IP: " + ip.toString() + " Port: " + std::to_string(port));
 			m_socket.setBlocking(false);
-			m_threadRunning = true;
+			m_connected = true;
 			// Create a thread to handle the client
 			m_thread = std::thread(&ServerClient::handleClient, this);
+			m_connectedEvent = true;
+		}
+		return true;
+	}
+	void ServerClient::enableAutoReconnect(bool enabled, unsigned int intervalMs)
+	{
+		m_autoReconnect = enabled;
+		m_autoReconnectIntervalMs = intervalMs;
+	}
+	void ServerClient::enableConnectAsync(bool enabled)
+	{
+		m_connectAsync = enabled;
+		if (!m_connectAsync)
+		{
+			m_connectingThredRunning = false;
+			if (m_connectThread)
+			{
+				m_connectThread->join();
+				delete m_connectThread;
+				m_connectThread = nullptr;
+			}
+		}
+	}
+	bool ServerClient::reconnect()
+	{
+		if(!m_connected) [[likely]]
+		{
+			return connect(m_ip, m_port, m_threadDelay);
 		}
 	}
 	void ServerClient::update()
 	{
-
+		if (m_disconnectedEvent) [[unlikely]]
+		{
+			m_disconnectedEvent = false;
+			m_connected = false;
+			m_thread.join();
+			m_autoReconnectClock.restart();
+			m_socket.setBlocking(true);
+			onDisconnect();
+		}
+		if (m_connectedEvent) [[unlikely]]
+		{
+			m_connectedEvent = false;
+			m_socket.setBlocking(false);
+			onConnect();
+		}
+		if (m_connected) [[likely]]
+			onUpdate();
+		else
+		{
+			if (m_autoReconnect)
+			{
+				if (m_connectAsync)
+				{
+					m_connectingThreadCondition.notify_one();
+				}
+				else
+				{
+					if (m_autoReconnectClock.getElapsedTime().asMilliseconds() >= m_autoReconnectIntervalMs)
+					{
+						m_autoReconnectClock.restart();
+						bool ret = connect(m_ip, m_port, m_threadDelay);
+						if (ret)
+						{
+							getLogger().log("Reconnected to server", Log::Level::info, Log::Colors::green);
+						}
+						else
+						{
+							getLogger().log("Failed to reconnect to server", Log::Level::error, Log::Colors::red);
+						}
+					}
+				}
+			}
+		}
+	}
+	void ServerClient::onUpdate()
+	{
+		
+	}
+	void ServerClient::onConnect()
+	{
+		getLogger().logInfo("Connected to server");
+	}
+	void ServerClient::onDisconnect()
+	{
+		getLogger().logInfo("Disconnected from server");
 	}
 	bool ServerClient::isConnected()
 	{
@@ -97,8 +172,7 @@ namespace Game
 	}
 	bool ServerClient::isConnected_internal()
 	{
-		sf::IpAddress ip = m_socket.getRemoteAddress();
-		return ip != sf::IpAddress::None;
+		return m_connected;
 	}
 	void ServerClient::disconnect()
 	{
@@ -109,11 +183,11 @@ namespace Game
 	}
 	void ServerClient::disconnect_internal()
 	{
-		if (!m_threadRunning)
+		if (!m_connected)
 			return;
 		m_socket.disconnect();
 		m_logger.logInfo("Disconnected from server");
-		m_threadRunning = false;
+		m_connected = false;
 		m_thread.join();
 	}
 
@@ -144,6 +218,40 @@ namespace Game
 		return packets;
 	}
 
+	void ServerClient::appendPacketWithSize(sf::Packet& packet1, const sf::Packet& packet2) {
+		std::size_t size = packet2.getDataSize();
+		packet1 << static_cast<sf::Uint32>(size); // Prefix with size of packet2
+		packet1.append(packet2.getData(), size);   // Append raw data from packet2
+	}
+
+	// Function to extract a packet from a combined packet
+	bool ServerClient::extractNextPacket(sf::Packet& source, sf::Packet& extracted) {
+		sf::Uint32 size;
+
+		// Read the packet size first
+		if (!(source >> size)) {
+			return false; // Failed to read size
+		}
+
+		// Check if the source has enough data for the specified packet size
+		if (source.getDataSize() < source.getReadPosition() + size) {
+			return false; // Not enough data in source
+		}
+
+		// Copy the exact number of bytes into a temporary packet
+		const char* data = static_cast<const char*>(source.getData()) + source.getReadPosition();
+		extracted.append(data, size);
+
+		// Move the read position forward by reading the extracted data directly
+		sf::Packet temp;
+		const char* skipData = static_cast<const char*>(source.getData()) + source.getReadPosition() + size;
+		temp.append(skipData, source.getDataSize() - (source.getReadPosition() + size));
+		source.clear();
+		source.append(temp.getData(), temp.getDataSize());
+
+		return true;
+	}
+
 
 	void ServerClient::handleClient()
 	{
@@ -154,8 +262,12 @@ namespace Game
 		Log::LogObject& logger = m_logger;
 		std::atomic<bool>& hasPacketReceived = m_hasPacketReceived;
 		std::atomic<bool>& hasPacketToSend = m_hasPacketToSend;
-		std::atomic<bool>& threadRunning = m_threadRunning;
-		while (threadRunning)
+		std::atomic<bool>& connected = m_connected;
+
+		m_disconnectedEvent = false;
+
+		const auto delay = std::chrono::milliseconds(m_threadDelay);
+		while (connected)
 		{
 			sf::Packet packet;
 			sf::Socket::Status status = socket.receive(packet);
@@ -173,7 +285,8 @@ namespace Game
 				}
 				case sf::Socket::Disconnected:
 				{
-					logger.logInfo("Server disconnected");
+					logger.logWarning("Connection lost");
+					connected = false;
 					break;
 				}
 			}
@@ -201,7 +314,8 @@ namespace Game
 						}
 						case sf::Socket::Disconnected:
 						{
-							logger.logInfo("Server disconnected");
+							logger.logWarning("Connection lost");
+							connected = false;
 							break;
 						}
 						default:
@@ -213,8 +327,41 @@ namespace Game
 				}
 				sending.clear();
 			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			std::this_thread::sleep_for(delay);
 		}
 		logger.logInfo("Client thread stopped");
+		m_disconnectedEvent = true;
 	}
+
+
+	void ServerClient::handleConnectThread()
+	{
+		while (m_connectingThredRunning)
+		{		
+			if (m_autoReconnect)
+			{
+				bool ret = connect(m_ip, m_port, m_threadDelay);
+				do {
+					if (ret)
+					{
+						getLogger().log("Reconnected to server", Log::Level::info, Log::Colors::green);
+					}
+					else
+					{
+						getLogger().log("Failed to reconnect to server", Log::Level::error, Log::Colors::red);
+						std::this_thread::sleep_for(std::chrono::milliseconds(m_autoReconnectIntervalMs));
+					}
+					ret = connect(m_ip, m_port, m_threadDelay);
+				} while (!ret);
+			}
+			else
+			{
+				connect_intrnal(m_ip, m_port, m_threadDelay);
+			}	
+			std::unique_lock<std::mutex> lock(m_connectingMutex);
+			m_connectingThreadCondition.wait(lock);
+			
+		}
+	}
+
 }

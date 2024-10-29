@@ -71,7 +71,7 @@ int main(int argc, char* argv[])
 	QTimer connectionTiler;
 	QTimer updateTimer;
 	QObject::connect(&connectionTiler, &QTimer::timeout, [&connectionTiler, &client]() {
-		if (client.isConnected())
+		//if (client.isConnected())
 		{
 			connectionTiler.stop();
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -88,15 +88,16 @@ int main(int argc, char* argv[])
 				{
 					Game::scene->addObject(Game::clientUpdateObj);
 					Game::scene->getSceneLogger().logInfo("ClientHandler added to scene");
-					Game::scene->start();
+					
 					// Read players
 					client.readPlayersFromServer();
 				}
 			}
 		}
 		});
-	connectionTiler.start(1000);
+	connectionTiler.start(0);
 
+	Game::scene->start();
 	int ret = app.exec();
 	client.disconnect();
 	Game::scene->stop();

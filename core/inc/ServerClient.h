@@ -10,17 +10,17 @@ namespace Game
 	class NetworkObject;
 	class ServerClient
 	{
-		
-
-		//static ServerClient& getInstance();
 	public:
 		ServerClient();
 		virtual ~ServerClient();
 		void addListener(NetworkObject* listener);
 		void removeListener(NetworkObject* listener);
-		//static void updateListeners();
 
-		void connect(const sf::IpAddress& ip, unsigned short port);
+		void enableAutoReconnect(bool enabled, unsigned int intervalMs = 1000);
+		void enableConnectAsync(bool enabled);
+
+		bool connect(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs = 10);
+		bool reconnect();
 		bool isConnected();
 		void disconnect();
 
@@ -30,52 +30,29 @@ namespace Game
 		std::vector<sf::Packet> getPackets();
 
 		// Function to append packet2 to the end of packet1 with a size prefix
-		static void appendPacketWithSize(sf::Packet& packet1, const sf::Packet& packet2) {
-			std::size_t size = packet2.getDataSize();
-			packet1 << static_cast<sf::Uint32>(size); // Prefix with size of packet2
-			packet1.append(packet2.getData(), size);   // Append raw data from packet2
-		}
+		static void appendPacketWithSize(sf::Packet& packet1, const sf::Packet& packet2);
 
 		// Function to extract a packet from a combined packet
-		static bool extractNextPacket(sf::Packet& source, sf::Packet& extracted) {
-			sf::Uint32 size;
+		static bool extractNextPacket(sf::Packet& source, sf::Packet& extracted);
 
-			// Read the packet size first
-			if (!(source >> size)) {
-				return false; // Failed to read size
-			}
-
-			// Check if the source has enough data for the specified packet size
-			if (source.getDataSize() < source.getReadPosition() + size) {
-				return false; // Not enough data in source
-			}
-
-			// Copy the exact number of bytes into a temporary packet
-			const char* data = static_cast<const char*>(source.getData()) + source.getReadPosition();
-			extracted.append(data, size);
-
-			// Move the read position forward by reading the extracted data directly
-			sf::Packet temp;
-			const char* skipData = static_cast<const char*>(source.getData()) + source.getReadPosition() + size;
-			temp.append(skipData, source.getDataSize() - (source.getReadPosition() + size));
-			source.clear();
-			source.append(temp.getData(), temp.getDataSize());
-
-			return true;
-		}
-		
-		virtual void update();
+		void update();
 
 		protected:
 		Log::LogObject& getLogger() { return m_logger; }
 		std::mutex& getMutex() { return m_mutex; }
 		std::unordered_map<std::string, NetworkObject*>& getListeners() { return m_listeners; }
+
+	protected:
+		virtual void onUpdate();
+		virtual void onConnect();
+		virtual void onDisconnect();
 	private:
+		bool connect_intrnal(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs);
 		bool isConnected_internal();
 		void disconnect_internal();
 
 		void handleClient();
-
+		void handleConnectThread();
 		
 
 		std::mutex m_mutex;
@@ -86,8 +63,27 @@ namespace Game
 		std::atomic<bool> m_hasPacketReceived;
 		std::vector<sf::Packet> m_sending;
 		std::atomic<bool> m_hasPacketToSend;
-		std::atomic<bool> m_threadRunning;
+		std::atomic<bool> m_connected;
+		std::atomic<bool> m_disconnectedEvent;
+		
 		Log::LogObject m_logger;
+		unsigned int m_threadDelay;
+
+		sf::IpAddress m_ip;
+		unsigned short m_port;
+
+		bool m_autoReconnect;
+		unsigned int m_autoReconnectIntervalMs;
+		
+		sf::Clock m_autoReconnectClock;
+
+
+		bool m_connectAsync;
+		std::mutex m_connectingMutex;
+		std::atomic<bool> m_connectedEvent;
+		std::atomic<bool> m_connectingThredRunning;
+		std::condition_variable m_connectingThreadCondition;
+		std::thread *m_connectThread;
 
 		std::unordered_map<std::string, NetworkObject*> m_listeners;
 	};

@@ -14,13 +14,15 @@ namespace Game
 			s_instance = this;
 		else
 			getLogger().logError("MyServerClient instance already exists");
+
+		enableAutoReconnect(true);
 	}
 	MyServerClient::~MyServerClient()
 	{
 		s_instance = nullptr;
 	}
 
-	void MyServerClient::update()
+	void MyServerClient::onUpdate()
 	{
 		std::vector<sf::Packet> received = getPackets();
 		auto& listeners = getListeners();

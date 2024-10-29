@@ -10,7 +10,7 @@ namespace Game
 		MyServerClient(QSFML::Scene* scene);
 		~MyServerClient();
 
-		void update() override;
+		
 
 		NetworkObject* createPlayer(const std::string& name, bool isDummy);
 		static std::string getUniquePlayerName();
@@ -18,6 +18,7 @@ namespace Game
 		void readPlayersFromServer();
 
 		private:
+			void onUpdate() override;
 
 		QSFML::Scene* m_scene = nullptr;
 		Player* m_mainPlayer = nullptr;
