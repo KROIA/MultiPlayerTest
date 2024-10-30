@@ -15,7 +15,7 @@ namespace Game
 		Server();
 		virtual ~Server();
 
-		void start(unsigned short port);
+		bool start(unsigned short port);
 		void stop();
 
 		virtual void update();

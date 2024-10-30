@@ -19,6 +19,7 @@ namespace Game
 
 		private:
 			void onUpdate() override;
+			void onConnect() override;
 
 		QSFML::Scene* m_scene = nullptr;
 		Player* m_mainPlayer = nullptr;

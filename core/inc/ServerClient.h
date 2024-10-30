@@ -19,7 +19,7 @@ namespace Game
 		void enableAutoReconnect(bool enabled, unsigned int intervalMs = 1000);
 		void enableConnectAsync(bool enabled);
 
-		bool connect(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs = 10);
+		void connect(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs = 10);
 		bool reconnect();
 		bool isConnected();
 		void disconnect();
@@ -47,7 +47,7 @@ namespace Game
 		virtual void onConnect();
 		virtual void onDisconnect();
 	private:
-		bool connect_intrnal(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs);
+		bool connect_internal(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs);
 		bool isConnected_internal();
 		void disconnect_internal();
 

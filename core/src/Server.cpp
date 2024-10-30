@@ -19,7 +19,7 @@ namespace Game
 		stop();
 	}
 
-	void Server::start(unsigned short port)
+	bool Server::start(unsigned short port)
 	{
 		m_threadRunning = true;
 		m_listener.setBlocking(false);
@@ -30,14 +30,17 @@ namespace Game
 			{
 				getLogger().logInfo("Server started on port: " + std::to_string(port));
 				m_thread = std::thread(&Server::handleServer, this);
+				return true;
 				break;
 			}
 			case sf::Socket::Status::Error:
 			{
 				getLogger().logError("Failed to start server on port: " + std::to_string(port));
+				return false;
 				break;
 			}
 		}
+		return false;
 	}
 	void Server::stop()
 	{

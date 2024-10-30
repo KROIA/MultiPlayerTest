@@ -14,12 +14,13 @@ namespace Game
 		m_autoReconnect = false;
 		m_autoReconnectIntervalMs = 1000;
 		m_connectedEvent = false;
+		m_disconnectedEvent = false;
 
 		m_ip = sf::IpAddress::None;
 		m_port = 0;
-		m_connectAsync = true;
+		m_connectAsync = false;
 		m_connectThread = nullptr;
-		enableConnectAsync(true);
+		//enableConnectAsync(true);
 	}
 
 	ServerClient::~ServerClient()
@@ -40,22 +41,25 @@ namespace Game
 		m_listeners.erase(listener->getName());
 	}
 
-	bool ServerClient::connect(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs)
+	void ServerClient::connect(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs)
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
+		std::unique_lock<std::mutex> lock(m_connectingMutex);
 		if (m_connectAsync)
 		{
 			if (!m_connectThread)
 			{
+				m_ip = ip;
+				m_port = port;
+				m_threadDelay = threadUpdateIntervalMs;
 				m_connectingThredRunning = true;
 				m_connectThread = new std::thread(&ServerClient::handleConnectThread, this);
 			}
 			m_connectingThreadCondition.notify_one();
 		}
-		
-		return connect_intrnal(ip, port, threadUpdateIntervalMs);
+		else
+			connect_internal(ip, port, threadUpdateIntervalMs);
 	}
-	bool ServerClient::connect_intrnal(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs)
+	bool ServerClient::connect_internal(const sf::IpAddress& ip, unsigned short port, unsigned int threadUpdateIntervalMs)
 	{
 		if (isConnected_internal())
 		{
@@ -104,7 +108,8 @@ namespace Game
 	{
 		if(!m_connected) [[likely]]
 		{
-			return connect(m_ip, m_port, m_threadDelay);
+			connect(m_ip, m_port, m_threadDelay);
+			return isConnected();
 		}
 	}
 	void ServerClient::update()
@@ -139,7 +144,8 @@ namespace Game
 					if (m_autoReconnectClock.getElapsedTime().asMilliseconds() >= m_autoReconnectIntervalMs)
 					{
 						m_autoReconnectClock.restart();
-						bool ret = connect(m_ip, m_port, m_threadDelay);
+						connect(m_ip, m_port, m_threadDelay);
+						bool ret = isConnected();
 						if (ret)
 						{
 							getLogger().log("Reconnected to server", Log::Level::info, Log::Colors::green);
@@ -263,7 +269,7 @@ namespace Game
 		std::atomic<bool>& hasPacketReceived = m_hasPacketReceived;
 		std::atomic<bool>& hasPacketToSend = m_hasPacketToSend;
 		std::atomic<bool>& connected = m_connected;
-
+		connected = true;
 		m_disconnectedEvent = false;
 
 		const auto delay = std::chrono::milliseconds(m_threadDelay);
@@ -340,7 +346,11 @@ namespace Game
 		{		
 			if (m_autoReconnect)
 			{
-				bool ret = connect(m_ip, m_port, m_threadDelay);
+				bool ret = false;
+				{
+					std::unique_lock<std::mutex> lock(m_connectingMutex);
+					ret = connect_internal(m_ip, m_port, m_threadDelay);
+				}
 				do {
 					if (ret)
 					{
@@ -350,13 +360,17 @@ namespace Game
 					{
 						getLogger().log("Failed to reconnect to server", Log::Level::error, Log::Colors::red);
 						std::this_thread::sleep_for(std::chrono::milliseconds(m_autoReconnectIntervalMs));
-					}
-					ret = connect(m_ip, m_port, m_threadDelay);
+						{
+							std::unique_lock<std::mutex> lock(m_connectingMutex);
+							ret = connect_internal(m_ip, m_port, m_threadDelay);
+						}
+					}					
 				} while (!ret);
 			}
 			else
 			{
-				connect_intrnal(m_ip, m_port, m_threadDelay);
+				std::unique_lock<std::mutex> lock(m_connectingMutex);
+				connect_internal(m_ip, m_port, m_threadDelay);
 			}	
 			std::unique_lock<std::mutex> lock(m_connectingMutex);
 			m_connectingThreadCondition.wait(lock);

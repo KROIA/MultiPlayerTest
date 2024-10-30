@@ -58,8 +58,8 @@ int main(int argc, char* argv[])
 	Log::UI::NativeConsoleView::createStaticInstance();
 	Log::UI::NativeConsoleView::getStaticInstance()->show();
 	server = new Game::MyServer();
-	server->start(5000);
-	server->loadFromFile();
+	if(server->start(5000))
+		server->loadFromFile();
 
 	QTimer updateTimer;
 	QObject::connect(&updateTimer, &QTimer::timeout, []() 

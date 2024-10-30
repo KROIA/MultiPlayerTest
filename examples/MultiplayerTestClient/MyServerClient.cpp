@@ -47,7 +47,7 @@ namespace Game
 							for (int i = 0; i < count; i++)
 							{
 								subPacket >> playerName;
-								auto it = listeners.find(name);
+								auto it = listeners.find(playerName);
 								if (it == listeners.end())
 								{
 									createPlayer(playerName, true);
@@ -78,6 +78,11 @@ namespace Game
 			}
 		}
 	}
+	void MyServerClient::onConnect()
+	{
+		// Read players
+		readPlayersFromServer();
+	}
 
 	NetworkObject* MyServerClient::createPlayer(const std::string& name, bool isDummy)
 	{
@@ -106,6 +111,7 @@ namespace Game
 	}
 	void MyServerClient::readPlayersFromServer()
 	{
+		getLogger().logInfo("Reading players from server");
 		sf::Packet packet;
 		packet << "Client" << static_cast<int>(Player::Command::getPlayers);
 		send(packet);

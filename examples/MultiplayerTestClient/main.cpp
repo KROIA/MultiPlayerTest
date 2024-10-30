@@ -89,8 +89,7 @@ int main(int argc, char* argv[])
 					Game::scene->addObject(Game::clientUpdateObj);
 					Game::scene->getSceneLogger().logInfo("ClientHandler added to scene");
 					
-					// Read players
-					client.readPlayersFromServer();
+					
 				}
 			}
 		}
